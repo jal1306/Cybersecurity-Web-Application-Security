@@ -1,6 +1,6 @@
 # Web Vulnerability Scanner & Security Dashboard
 
-A local educational web security scanner with a dashboard, scan history, findings severity summaries, and JSON/CSV exports.
+A local educational web security scanner with a dashboard, scan history, findings severity summaries, and PDF, JSON, and CSV report downloads.
 
 ## Safety and scope
 - Use only against websites you own or have explicit written permission to test.
@@ -42,7 +42,7 @@ python app.py
 2. Enter an HTTPS or HTTP URL for a site you own / are authorized to assess.
 3. Confirm the authorization checkbox.
 4. Click **Start Scan**. Results are saved in `scanner.db`.
-5. Open Scan History to view previous scans or export a report.
+5. Open Scan History to view previous scans or download a PDF, JSON, or CSV report. The scan results page also has a **Download PDF** button.
 
 ## What is checked
 - Security headers: Content-Security-Policy, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, Strict-Transport-Security (HTTPS only)

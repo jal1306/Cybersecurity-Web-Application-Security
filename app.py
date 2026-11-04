@@ -4,7 +4,14 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from flask import Flask, render_template, request, redirect, url_for, flash, Response, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, Response, abort, make_response
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+from xml.sax.saxutils import escape
 from scanner import scan_target
 
 app = Flask(__name__)
@@ -97,6 +104,121 @@ def export_json(scan_id):
     payload = {k: report[k] for k in ("id","created_at","url","score","status_code","findings","checks","counts")}
     return Response(json.dumps(payload, indent=2), mimetype="application/json",
                     headers={"Content-Disposition": f"attachment; filename=security-scan-{scan_id}.json"})
+
+@app.route("/export/<int:scan_id>.pdf")
+def export_pdf(scan_id):
+    """Generate a downloadable PDF report for a saved scan."""
+    report = get_scan(scan_id)
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, rightMargin=18*mm, leftMargin=18*mm,
+        topMargin=18*mm, bottomMargin=18*mm,
+        title=f"Website Security Scan #{report['id']}",
+        author="Web Vulnerability Scanner & Security Dashboard"
+    )
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"],
+                              fontSize=21, leading=26, textColor=colors.HexColor("#172554"),
+                              alignment=TA_LEFT, spaceAfter=5*mm))
+    styles.add(ParagraphStyle(name="SectionHeading", parent=styles["Heading2"],
+                              fontSize=13, leading=16, textColor=colors.HexColor("#1d4ed8"),
+                              spaceBefore=5*mm, spaceAfter=2*mm))
+    styles.add(ParagraphStyle(name="SmallBody", parent=styles["BodyText"],
+                              fontSize=8.5, leading=11, wordWrap="CJK"))
+    styles.add(ParagraphStyle(name="Cell", parent=styles["BodyText"], fontSize=8, leading=10))
+    story = []
+    story.append(Paragraph("Website Security Scan Report", styles["ReportTitle"]))
+    story.append(Paragraph("Web Vulnerability Scanner &amp; Security Dashboard", styles["Normal"]))
+    story.append(Spacer(1, 5*mm))
+    summary = [
+        ["Scan ID", f"#{report['id']}", "Security score", f"{report['score']}/100"],
+        ["Target URL", Paragraph(escape(str(report['url'])), styles["Cell"]), "HTTP status", str(report.get("status_code") or "TLS / connection error")],
+        ["Scan date", Paragraph(escape(str(report['created_at'])), styles["Cell"]), "Findings", str(len(report["findings"]))],
+    ]
+    summary_table = Table(summary, colWidths=[25*mm, 62*mm, 28*mm, 42*mm])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (0,-1), colors.HexColor("#eff6ff")),
+        ("BACKGROUND", (2,0), (2,-1), colors.HexColor("#eff6ff")),
+        ("TEXTCOLOR", (0,0), (0,-1), colors.HexColor("#1e3a8a")),
+        ("TEXTCOLOR", (2,0), (2,-1), colors.HexColor("#1e3a8a")),
+        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+        ("FONTNAME", (2,0), (2,-1), "Helvetica-Bold"),
+        ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#dbeafe")),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 6), ("RIGHTPADDING", (0,0), (-1,-1), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+    ]))
+    story.append(summary_table)
+    story.append(Paragraph("Severity Summary", styles["SectionHeading"]))
+    severity = [["Severity", "Count"]]
+    for sev in ("Critical", "High", "Medium", "Low", "Info"):
+        severity.append([sev, str(report["counts"].get(sev, 0))])
+    sev_table = Table(severity, colWidths=[50*mm, 25*mm], repeatRows=1)
+    sev_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#172554")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#cbd5e1")),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("PADDING", (0,0), (-1,-1), 6),
+    ]))
+    story.append(sev_table)
+    story.append(Paragraph("Findings and Recommendations", styles["SectionHeading"]))
+    if report["findings"]:
+        for i, finding in enumerate(report["findings"], 1):
+            content = [
+                Paragraph(f"<b>{i}. [{escape(str(finding.get('severity','Info')))}] {escape(str(finding.get('title','Finding')))}</b>", styles["BodyText"]),
+                Spacer(1, 1.5*mm),
+                Paragraph(f"<b>Details:</b> {escape(str(finding.get('detail','')))}", styles["SmallBody"]),
+                Spacer(1, 1.5*mm),
+                Paragraph(f"<b>Recommendation:</b> {escape(str(finding.get('recommendation','')))}", styles["SmallBody"]),
+                Spacer(1, 3*mm),
+            ]
+            story.append(KeepTogether(content))
+    else:
+        story.append(Paragraph("No findings were reported by the configured checks. This does not prove the website is secure.", styles["BodyText"]))
+    story.append(Paragraph("Checks Performed", styles["SectionHeading"]))
+    check_rows = [["Check", "Status", "Details"]]
+    for check in report["checks"]:
+        check_rows.append([
+            Paragraph(escape(str(check.get("name", ""))), styles["Cell"]),
+            Paragraph(escape(str(check.get("status", "unknown")).upper()), styles["Cell"]),
+            Paragraph(escape(str(check.get("detail", ""))), styles["Cell"]),
+        ])
+    if len(check_rows) > 1:
+        checks_table = Table(check_rows, colWidths=[43*mm, 22*mm, 100*mm], repeatRows=1)
+        checks_table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#172554")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#cbd5e1")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5),
+            ("TOPPADDING", (0,0), (-1,-1), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(checks_table)
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("Scope and Disclaimer", styles["SectionHeading"]))
+    story.append(Paragraph(
+        "This report reflects only the low-impact checks implemented by this educational scanner at the time of the scan. "
+        "Results may include false positives or false negatives and are not a comprehensive penetration test. "
+        "Test only systems you own or are explicitly authorized to assess.", styles["SmallBody"]))
+
+    def add_page_number(canvas, document):
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor("#dbeafe"))
+        canvas.line(18*mm, 13*mm, A4[0]-18*mm, 13*mm)
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawString(18*mm, 8*mm, "Web Vulnerability Scanner — Educational Report")
+        canvas.drawRightString(A4[0]-18*mm, 8*mm, f"Page {document.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    response = make_response(buffer.getvalue())
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = f"attachment; filename=security-scan-{scan_id}.pdf"
+    return response
+
 
 @app.route("/export/<int:scan_id>.csv")
 def export_csv(scan_id):
