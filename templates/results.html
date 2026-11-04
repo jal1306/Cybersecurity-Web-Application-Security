@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Scan Results{% endblock %}{% block heading %}Scan Report{% endblock %}
+{% block content %}
+<div class="report-top"><div><a class="back-link" href="{{ url_for('index') }}">← Dashboard</a><h2>{{ report.url }}</h2><p>Scan #{{ report.id }} · {{ report.created_at }} · HTTP {{ report.status_code or 'TLS error' }}</p></div><div class="report-actions"><a class="secondary-btn" href="{{ url_for('export_json', scan_id=report.id) }}">↓ JSON</a><a class="secondary-btn" href="{{ url_for('export_csv', scan_id=report.id) }}">↓ CSV</a></div></div>
+<section class="stats-grid report-stats">
+  <article class="stat-card"><div class="stat-top"><span>Security score</span><span class="stat-icon green">◈</span></div><strong>{{ report.score }}<em>/100</em></strong><div class="score-track"><div style="width:{{ report.score }}%"></div></div></article>
+  {% for sev in ['Critical','High','Medium','Low'] %}<article class="stat-card"><div class="stat-top"><span>{{ sev }} findings</span><span class="severity-dot {{ sev|lower }}"></span></div><strong>{{ report.counts[sev] }}</strong><small>Detected by baseline checks</small></article>{% endfor %}
+</section>
+<section class="panel"><div class="panel-heading"><div><span class="section-kicker">ASSESSMENT OUTPUT</span><h2>Findings <span class="count-badge">{{ report.findings|length }}</span></h2><p>Review each item and validate in the context of your application.</p></div></div>
+{% if report.findings %}<div class="finding-list">{% for f in report.findings %}<article class="finding"><div class="finding-sev {{ f.severity|lower }}">{{ f.severity }}</div><div class="finding-body"><h3>{{ f.title }}</h3><p>{{ f.detail }}</p><div class="recommendation"><b>Recommendation</b><p>{{ f.recommendation }}</p></div></div></article>{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">✓</div><b>No findings from the configured checks</b><p>This does not prove the website is secure; the scan has limited coverage.</p></div>{% endif %}
+</section>
+<section class="panel checks-panel"><div class="panel-heading"><div><span class="section-kicker">TECHNICAL DETAILS</span><h2>Checks performed</h2></div></div><div class="check-grid">{% for c in report.checks %}<div class="check-row"><span class="check-state {{ c.status }}">{{ '✓' if c.status == 'ok' else '!' if c.status == 'warning' else '·' }}</span><div><b>{{ c.name }}</b><small>{{ c.detail }}</small></div></div>{% endfor %}</div></section>
+{% endblock %}

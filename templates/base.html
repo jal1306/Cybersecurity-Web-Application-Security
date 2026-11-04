@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SentinelScan{% endblock %} · Security Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script defer src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">S</span><span>Sentinel<span class="brand-light">Scan</span><small>WEB SECURITY PLATFORM</small></span></a>
+    <div class="nav-label">WORKSPACE</div>
+    <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="{{ url_for('index') }}">▦ <span>Dashboard</span></a>
+    <a class="nav-link {% if request.endpoint in ['history','results'] %}active{% endif %}" href="{{ url_for('history') }}">◷ <span>Scan History</span></a>
+    <div class="side-note"><span class="status-dot"></span> Local scanner ready <small>Low-impact checks enabled</small></div>
+    <div class="sidebar-bottom"><div class="avatar">ED</div><div><b>Security Analyst</b><small>Local workspace</small></div></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div><span class="eyebrow">SECURITY OPERATIONS</span><h1>{% block heading %}Overview{% endblock %}</h1></div><div class="top-actions"><span class="live-pill"><i></i> SCANNER ONLINE</span><span class="date-label">EDUCATION EDITION</span></div></header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+    <footer>SentinelScan · Educational security assessment · Only scan authorized targets</footer>
+  </main>
+</div>
+</body></html>
